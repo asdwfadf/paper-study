@@ -47,7 +47,7 @@
 
 ## Overall Architecture
 
-- ![alt text](image-1.png)
+- ![alt text](image.png)
 
 ---
 
@@ -240,7 +240,43 @@ L = CrossEntropy(...)
 
 ---
 
-# 6. Implementation
+# 6. Training Configuration
+
+
+| Item | Value |
+|------|-------|
+| Dataset | ImageNet ILSVRC-2012 |
+| Augmentation | Horizontal Flipping, RGB Color Shift |
+| Input Size | 224 × 224 |
+| Optimizer | mini-batch SGD |
+| Batch Size | 256 |
+| Epochs | 74 |
+| Initial LR | 0.01 |
+| Momentum | 0.9 |
+| Weight Decay | 5e-4 |
+| Dropout | 0.5 |
+| Loss | Cross Entropy |
+| Initial weight | N(0, 0.01) |
+| Initial bias | 0 |
+
+## Data Preprocessing
+
+**Training**
+- Resize (shorter side = 256)
+- Random Crop (224 × 224)
+- Random Horizontal Flip
+- PCA-based RGB Color Augmentation
+
+**Validation / Test**
+- Resize (shorter side = 256)
+- Center Crop (224 × 224)
+
+**Multi-Scale Training**
+- 학습 데이터의 다양성을 늘리기 위해 Resize Scale ∈ [256, 512] 로 변경한 실험도 했음
+
+---
+
+# 7. Implementation
 
 <!--
 논문를 Scratch로 구현한 내용을 작성합니다.
@@ -258,7 +294,7 @@ L = CrossEntropy(...)
 
 ---
 
-# 7. Analysis
+# 8. Analysis
 
 <!--
 논문를 객관적으로 분석합니다.
@@ -281,7 +317,7 @@ L = CrossEntropy(...)
 
 ---
 
-# 8. Personal Insights
+# 9. Personal Insights
 
 <!--
 내가 논문를 읽고 느낀 점
