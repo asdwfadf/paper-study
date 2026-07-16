@@ -17,15 +17,13 @@
 - 계산량이 너무 컸다.
 - 데이터가 부족했다.
 -->
-- (Krizhevsky et al., 2012)에서는 11*11, stride 4 사용
-- (Zeiler & Fergus, 2013; Sermanet et al., 2014)에서는 7*7, stride 2 사용 = 해상도 반토막
-- 위 두 논문에서는 큰 필터 사이즈와 stride를 사용해서 합성곱 연산 과정에서 정보 손실 발생
-- 대규모 이미지 분류에서의 깊은 CNN의 정확도 조사 
-- 전체 레이어에서 3*3 필터를 사용하는 깊은 네트워크 평가
-- 16~19층으로 기존 대비 상당한 개선을 보임
-- VGG는 다양한 깊이(A~E)를 실험하여 네트워크 깊이가 성능에 미치는 영향을 분석하였다.
-- 2014년 이미지넷 챌린지에서 분류 2위함
 
+## Problem
+- 기존 CNN은 큰 Convolution Filter와 큰 Stride를 사용하여 초기 단계에서 많은 정보 손실이 발생했다.
+- 네트워크 깊이가 증가하면 성능이 향상되는지에 대한 체계적인 분석이 부족했다.
+
+## Goal
+- 네트워크 깊이가 성능에 미치는 영향을 분석한다.
 
 ---
 
@@ -37,9 +35,9 @@
 "이 논문의 가장 중요한 기여가 무엇인가?"
 를 적는다.
 -->
-- 3 * 3 filter를 사용해서 깊은 층을 쌓음
-- 특징 추출은 stride=1의 Convolution으로 꼼꼼하게 하고, 해상도 감소는 Max Pooling에 맡긴다
-- 특징을 충분히 추출 후 압축하자
+- 3×3 Convolution을 쌓아 큰 Receptive Field를 효율적으로 확보한다.
+- Layer을 깊게 쌓아 표현력을 향상시킨다.
+- Max Pooling을 통해 필요한 시점에서만 해상도를 줄인다.
 
 ---
 
@@ -242,7 +240,6 @@ L = CrossEntropy(...)
 
 # 6. Training Configuration
 
-
 | Item | Value |
 |------|-------|
 | Dataset | ImageNet ILSVRC-2012 |
@@ -258,6 +255,8 @@ L = CrossEntropy(...)
 | Loss | Cross Entropy |
 | Initial weight | N(0, 0.01) |
 | Initial bias | 0 |
+
+- 논문에서는 Validation Accuracy가 더 이상 개선되지 않을 때 LR을 1/10으로 줄임
 
 ## Data Preprocessing
 
@@ -283,14 +282,47 @@ L = CrossEntropy(...)
 
 - 구현한 파일 구조
 - 구현 과정
-- 구현하면서 어려웠던 점
-- 논문와 다르게 구현한 부분
+- 논문과 다르게 구현한 부분
 - Random Input으로 Forward Pass 검증
 - Tensor Shape 검증
 - Parameter 개수 확인
 
 코드 자체보다는 구현 과정과 검증 내용을 중심으로 작성합니다.
 -->
+
+## Directory Structure
+
+VGGNet/
+├── README.md
+├── model.py
+└── train.py
+
+## Model Implementation
+
+- extract_features와 classifier를 각각 `nn.Sequential`로 구현
+    - extract_features: 13-Convolution Layer
+    - classifier: 3-Fully Connected Layer
+- 본 구현에서는 `nn.AdaptiveAvgPool2d(7, 7)`를 추가해 입력 크기와 관계없이 마지막 Feature Map의 크기를 7×7로 맞춘 후 Fully Connected Layer를 적용하도록 구현함
+- Weight Initialization은 논문과 동일하게 Gaussian Distribution N(0,0.01) 적용함
+
+## Verification
+
+| Item | Result |
+|------|--------|
+| Input Shape | [2, 3, 224, 224] |
+| Output Shape | [2, 1000] |
+| extract_features params | 14,714,688 |
+| classifier params | 123,642,856 |
+| Total params | 138,357,544 |
+
+## Notes
+
+- VGGNet16(Configuration D) 구조를 PyTorch로 Scratch 구현
+- 실제 데이터셋을 사용하지 않았으며, 랜덤값을 입력으로 사용
+- 검증
+    - Input/Output Shape
+    - Forward pass
+    - Total param: 138M으로 원 논문과 동일
 
 ---
 
@@ -309,6 +341,15 @@ L = CrossEntropy(...)
 논문를 비판적으로 분석하는 공간입니다.
 -->
 
+## merits
+- 3*3 Convolution만 사용하여 구조가 매우 단순하고 구현이 쉽다.
+- 네트워크가 깊어 표현력이 좋다.
+
+## demerits
+- Parameter가 매우 많다.
+- FC Layer가 대부분의 Parameter를 차지한다.
+
+## why
 - 왜 7*7 필터를 사용안하고 3*3필터를 사용할까?:
     1. 3*3필터를 3번 사용하면 7*7과 같은 receptive field를 가지면서 parameter 수는 더 적음
         3*3*3 = 27개
@@ -332,5 +373,9 @@ L = CrossEntropy(...)
 
 등을 자유롭게 작성
 -->
+
+요즘은 conv에 relu를 고려해서 분산을 두배로 늘리는 초기화기법을 적용하는데 해당 논문은 옛날거라서 그런지 그렇게하지않음 그래서 혁펜하임은 conv는 두배늘리고 mlp부분은 논문과 똑같이함
+
+
 
 ---

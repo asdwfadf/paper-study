@@ -4,6 +4,7 @@ class VGGNet16(nn.Module):
     def __init__(self, num_classes=1000):
         super(VGGNet16, self).__init__()
 
+        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
         self.extract_features = nn.Sequential(
             # Layer 1
             nn.Conv2d(3, 64, 3, padding=1, stride=1),
@@ -47,7 +48,7 @@ class VGGNet16(nn.Module):
             nn.MaxPool2d(2, 2),
         )
 
-        self.fc = nn.Sequential(
+        self.classifier = nn.Sequential(
             # fc1
             nn.Linear(25088, 4096),
             nn.ReLU(inplace=True),
@@ -62,9 +63,15 @@ class VGGNet16(nn.Module):
             nn.Linear(4096, num_classes)
         )
 
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0, std=0.1)
+                nn.init.constant_(m.bias, 0)
+
     def forward(self, x):
         features = self.extract_features(x)
+        features = self.avgpool(features)
         features = features.view(features.size(0), -1)
-        logits = self.fc(features)
+        logits = self.classifier(features)
 
         return logits
