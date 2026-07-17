@@ -374,8 +374,8 @@ VGGNet/
 등을 자유롭게 작성
 -->
 
-요즘은 conv에 relu를 고려해서 분산을 두배로 늘리는 초기화기법을 적용하는데 해당 논문은 옛날거라서 그런지 그렇게하지않음 그래서 혁펜하임은 conv는 두배늘리고 mlp부분은 논문과 똑같이함
-
-
+- 논문과 최신 구현 방법 사이에 차이가 있다는 점이 흥미로웠다. 특히 `nn.AdaptiveAvgPool2d((7, 7))`를 사용하는 이유를 이해할 수 있었고, 이를 통해 다양한 입력 크기를 처리할 수 있다는 점을 배웠다.
+- VGG16의 전체 파라미터(약 138M) 중 대부분이 Fully Connected Layer에 집중되어 있다는 점이 인상적이었다. 이후 ResNet이나 EfficientNet 등에서 Global Average Pooling을 사용하는 이유를 이해하는 데 도움이 되었다.
+- 논문에서는 모든 가중치를 Gaussian Distribution N(0, 0.01)으로 초기화했지만, 최근에는 ReLU를 고려한 He Initialization(분산이 2배)이 더 널리 사용된다는 점을 비교하며 이해할 수 있었다.
 
 ---
