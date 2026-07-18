@@ -6,11 +6,9 @@ import model
 
 SEED = 42
 
-torch.manual_seed(SEED)
+x = torch.randn(2, 3, 224, 224)
 
-x = torch.randn(2, 3, 300, 300)
-
-model = model.VGGNet16()
+model = model.ResNet34()
 summary(model, input_size=x.shape, device='cpu')
 
 outputs = model(x)

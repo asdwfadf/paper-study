@@ -97,7 +97,7 @@
 ### Basic Residual Block
 
 **Purpose**<br>
-- 입력 Feature를 직접 학습하지 않고 Residual(잔차)을 학습하여 깊은 네트워크의 학습을 안정화
+- Residual Learning을 통해 degradation problem 해결
 
 **Configuration**<br>
 - Conv3×3<br>
@@ -109,8 +109,8 @@
 - ReLU
 
 **Role**<br>
-- 입력 Feature를 Shortcut으로 전달하여 Gradient Vanishing 문제를 완화<br>
-- Residual Learning을 통해 깊은 네트워크의 최적화를 쉽게 수행
+- Residual Learning을 통해 깊은 네트워크의 최적화를 쉽게 수행<br>
+- Gradient Vanishing 문제를 완화하는 효과도 있음
 
 **Output**<br>
 - (B, C, H, W) → (B, C, H, W)
@@ -118,7 +118,7 @@
 ### Projection Shortcut
 
 **Purpose**<br>
-- Feature Map의 크기 또는 Channel 수가 변경될 때 Shortcut과 Main Branch의 크기를 맞춤
+- Residual Learning을 적용 할 Feature Map의 크기 또는 Channel 수가 변경될 때 shape을 맞춘 후 적용
 
 **Configuration**<br>
 - Conv1×1<br>
@@ -126,7 +126,6 @@
 
 **Role**<br>
 - Shortcut의 Shape을 Main Branch와 동일하게 변환<br>
-- Downsampling이 필요한 Residual Block에서 사용
 
 **Output**<br>
 - (B, C, H, W) → (B, out_c, H/2, W/2)
@@ -137,11 +136,11 @@
 - Feature Map의 공간 정보를 평균하여 하나의 Feature Vector로 변환
 
 **Configuration**<br>
-- Kernel Size : Feature Map 전체
+- Kernel Size : Feature Map Size
 
 **Role**<br>
 - Fully Connected Layer의 Parameter 수를 크게 감소<br>
-- 위치 정보보다 채널별 특징을 요약
+- 채널별 특징을 요약
 
 **Output**<br>
 - (B, 512, 7, 7)<br>
@@ -203,7 +202,7 @@
 ### 5. Layer2 (4 Residual Blocks)
 
 (B, 64, 56, 56)<br>
-↓ Projection Shortcut + Basic Block<br>
+↓ Projection Shortcut<br>
 (B, 128, 28, 28)<br>
 ↓ Basic Block ×3<br>
 (B, 128, 28, 28)
@@ -211,7 +210,7 @@
 ### 6. Layer3 (6 Residual Blocks)
 
 (B, 128, 28, 28)<br>
-↓ Projection Shortcut + Basic Block<br>
+↓ Projection Shortcut<br>
 (B, 256, 14, 14)<br>
 ↓ Basic Block ×5<br>
 (B, 256, 14, 14)
@@ -219,7 +218,7 @@
 ### 7. Layer4 (3 Residual Blocks)
 
 (B, 256, 14, 14)<br>
-↓ Projection Shortcut + Basic Block<br>
+↓ Projection Shortcut<br>
 (B, 512, 7, 7)<br>
 ↓ Basic Block ×2<br>
 (B, 512, 7, 7)
@@ -340,18 +339,20 @@ L = CrossEntropy(...)
 
 ## Directory Structure
 
-VGGNet/
+ResNet/
 ├── README.md
 ├── model.py
-└── train.py
+└── main.py
 
 ## Model Implementation
 
-- extract_features와 classifier를 각각 `nn.Sequential`로 구현
-    - extract_features: 13-Convolution Layer
-    - classifier: 3-Fully Connected Layer
-- 본 구현에서는 `nn.AdaptiveAvgPool2d(7, 7)`를 추가해 입력 크기와 관계없이 마지막 Feature Map의 크기를 7×7로 맞춘 후 Fully Connected Layer를 적용하도록 구현함
-- Weight Initialization은 논문과 동일하게 Gaussian Distribution N(0,0.01) 적용함
+- `conv1`, `layer1`~`layer4`, `fc`를 각각 모듈 단위로 구현
+    - conv1 : 7×7 Convolution + Batch Normalization + ReLU
+    - layer1~layer4 : Basic Residual Block을 각각 3, 4, 6, 3개씩 구성
+    - fc : Global Average Pooling 이후 Fully Connected Layer
+- Downsampling이 필요한 Residual Block에서는 `1×1 Convolution`을 사용한 Projection Shortcut을 구현하여 Feature Map의 크기와 Channel 수를 맞춤
+- 입력 크기에 관계없이 마지막 Feature Map을 `(1, 1)`로 변환하기 위해 `nn.AdaptiveAvgPool2d((1, 1))`를 사용
+- Weight Initialization은 논문과 동일하게 He(Kaiming) Initialization 적용
 
 ## Verification
 
@@ -359,18 +360,27 @@ VGGNet/
 |------|--------|
 | Input Shape | [2, 3, 224, 224] |
 | Output Shape | [2, 1000] |
-| extract_features params | 14,714,688 |
-| classifier params | 123,642,856 |
-| Total params | 138,357,544 |
+| conv1 params | 9,408 |
+| layer1 params | 221,952 |
+| layer2 params | 1,116,416 |
+| layer3 params | 6,822,400 |
+| layer4 params | 13,114,368 |
+| fc params | 513,000 |
+| Total params | 21,797,672 |
 
 ## Notes
 
-- VGGNet16(Configuration D) 구조를 PyTorch로 Scratch 구현
-- 실제 데이터셋을 사용하지 않았으며, 랜덤값을 입력으로 사용
-- 검증
-    - Input/Output Shape
-    - Forward pass
-    - Total param: 138M으로 원 논문과 동일
+- ResNet34(BasicBlock) 구조를 PyTorch로 Scratch 구현
+- Basic Residual Block을 이용하여 Residual Learning을 구현
+- Downsampling이 필요한 Block에서는 Projection Shortcut(1×1 Convolution)을 사용
+- Fully Connected Layer 이전에 Global Average Pooling을 적용하여 Feature Map을 하나의 Feature Vector로 변환
+- 랜덤값을 입력으로 사용
+
+- ResNet50 이상에서는 Bottleneck 구조 사용함
+    - 1x1로 채널 수를 줄인 후 3x3을 통과시키고 다시 1x1로 채널 수를 키움
+        - 3x3만 사용하면 파라미터 수가 너무 많아져서
+        - 1x1 : 채널 수 조정
+        - 3x3 : 공간 정보 보기
 
 ---
 
@@ -399,14 +409,21 @@ VGGNet/
 
 ## why
 - H(x) = F(x) + x가 왜 최적화하기 더 쉬울까?
-    - H(x) = 3.3, x = 3.0, F(x) = xW 이라고 할 때
-        - 기존 H(x) = F(x)로 구하려면
-            - xW = 3.3
-            - W = 1.1
-        - H(x) = F(x) + x로 구하면
-            - xW + x = 3.3
-            - W = 0.1
-    - **W는 애초에 0 근처로 초기화하기 때문에 1.1보다 0.1을 학습하는게 훨씬 쉽다**
+    - H(x) ≈ x 이라고 할 때
+        - F(x) = 0 행렬
+    - **Weight는 애초에 0 근처로 초기화하기 때문에 0을 만드는게 훨씬 쉽다**
+
+- 왜 H(x) ≈ x?
+    - 잘 학습된 신경망은 입력으로부터 차근차근 값을 바꿔나가 36층 -> 38층으로 갈 때 값의 변화가 그리 크지 않을 것임
+        - 하나의 Block에서 많은 걸 하는 모델은 새로운 입력에 대해서 불안정함
+            - Overfitting이라고 볼 수 있음
+        - 하나의 Block에서 모든 걸 다 하려고 하지말고 차근차근 바꿔나가라고 AI에게 말해주는 셈
+
+- 왜 ReLU 전에 x를 더할까?
+    - ReLU의 음수를 없애는 연산으로 인한 정보 손실을 최대한 막기 위함
+    - 역전파 과정에서 기울기를 구할 때 F(x) + x를 미분하면
+        - dF(x)/dx + 1
+            - 여기서 + 1이 기울기 소실 문제를 해결해줌
 
 ---
 
@@ -426,8 +443,7 @@ VGGNet/
 등을 자유롭게 작성
 -->
 
-- 논문과 최신 구현 방법 사이에 차이가 있다는 점이 흥미로웠다. 특히 `nn.AdaptiveAvgPool2d((7, 7))`를 사용하는 이유를 이해할 수 있었고, 이를 통해 다양한 입력 크기를 처리할 수 있다는 점을 배웠다.
-- VGG16의 전체 파라미터(약 138M) 중 대부분이 Fully Connected Layer에 집중되어 있다는 점이 인상적이었다. 이후 ResNet이나 EfficientNet 등에서 Global Average Pooling을 사용하는 이유를 이해하는 데 도움이 되었다.
-- 논문에서는 모든 가중치를 Gaussian Distribution N(0, 0.01)으로 초기화했지만, 최근에는 ReLU를 고려한 He Initialization(분산이 2배)이 더 널리 사용된다는 점을 비교하며 이해할 수 있었다.
+- Skip Connection은 흔히 Vanishing Gradient 문제를 해결하기 위한 기법으로 알려져 있지만, 논문를 직접 읽어보니 핵심 목적은 깊은 네트워크에서 발생하는 **Degradation Problem**을 해결하는 것이었다. 다만 Residual Learning 구조 덕분에 Gradient 전달이 쉬워지면서 Vanishing Gradient 완화에도 도움이 되었다는 점을 새롭게 알게 되었다.
+- Skip Connection 하나가 추가되었을 뿐인데 이후 다양한 후속 모델에 영향을 줄 정도로 딥러닝 모델 설계에 큰 변화를 가져왔다는 점이 인상 깊었다.
 
 ---

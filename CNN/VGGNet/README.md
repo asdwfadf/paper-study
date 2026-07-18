@@ -295,7 +295,7 @@ L = CrossEntropy(...)
 VGGNet/
 ├── README.md
 ├── model.py
-└── train.py
+└── main.py
 
 ## Model Implementation
 
@@ -319,10 +319,7 @@ VGGNet/
 
 - VGGNet16(Configuration D) 구조를 PyTorch로 Scratch 구현
 - 실제 데이터셋을 사용하지 않았으며, 랜덤값을 입력으로 사용
-- 검증
-    - Input/Output Shape
-    - Forward pass
-    - Total param: 138M으로 원 논문과 동일
+- Total param: 138M으로 원 논문과 동일
 
 ---
 
