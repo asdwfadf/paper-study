@@ -1,6 +1,6 @@
 # 1. Paper Information
 
-- Title: VERY DEEP CONVOLUTIONAL NETWORKS FOR LARGE-SCALE IMAGE RECOGNITION
+- Title: Deep Residual Learning for Image Recognition
 - Paper URL: [https://arxiv.org/pdf/1409.1556]
 
 ---
@@ -405,7 +405,7 @@ ResNet/
 - 구현이 무척 쉽다.
 
 ## demerits
-
+- 이렇다 할 단점은 없지만, 잔차 학습 시의 `+` 연산 때문에 정보가 뭉개진다.
 
 ## why
 - H(x) = F(x) + x가 왜 최적화하기 더 쉬울까?
@@ -445,5 +445,6 @@ ResNet/
 
 - Skip Connection은 흔히 Vanishing Gradient 문제를 해결하기 위한 기법으로 알려져 있지만, 논문를 직접 읽어보니 핵심 목적은 깊은 네트워크에서 발생하는 **Degradation Problem**을 해결하는 것이었다. 다만 Residual Learning 구조 덕분에 Gradient 전달이 쉬워지면서 Vanishing Gradient 완화에도 도움이 되었다는 점을 새롭게 알게 되었다.
 - Skip Connection 하나가 추가되었을 뿐인데 이후 다양한 후속 모델에 영향을 줄 정도로 딥러닝 모델 설계에 큰 변화를 가져왔다는 점이 인상 깊었다.
+- ResNet의 가장 큰 모델의 파라미터 수가 VGGNet의 절반도 안되는데 성능은 훨씬 뛰어나다..!
 
 ---
