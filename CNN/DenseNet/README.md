@@ -111,7 +111,7 @@
 
 ### 2. Conv7×7 + MaxPool
 (B, 3, 224, 224) <br>
-↓ Conv7×7 + BN + ReLU <br>
+↓ BN -> ReLU -> Conv7×7 <br>
 (B, 64, 112, 112) <br>
 ↓ MaxPool (3×3, stride 2) <br>
 (B, 64, 56, 56)
@@ -170,13 +170,12 @@
     - 각 층의 특징 맵 출력 수 : `k`
     - k_0 : 네트워크의 입력 채널 수
 
--  ## Nesterov Momentum (NAG)
-- 정의: 현재 위치에서의 기울기(Gradient)만 확인하는 것이 아니라, 관성 방향으로 미리 이동해 본 미래 위치에서 기울기를 계산하여 최적화를 수행하는 방식
-- 수식 (매개변수 업데이트):
+- Nesterov Momentum (NAG)
+    - 관성 방향으로 이동해 본 미래 위치에서 기울기를 계산하여 최적화를 수행하는 방식
+
     $$v_t = \gamma v_{t-1} + \eta \nabla_\theta J(\theta_t - \gamma v_{t-1})$$
     $$\theta_{t+1} = \theta_t - v_t$$
 
-- 수식 항목 정의:
     - $\theta_t$: 현재 위치(가중치 파라미터)
     - $v_t$: $t$ 시점의 속도(관성)
     - $\gamma$: 모멘텀 계수(마찰 계수), 보통 $0.9$ 사용
@@ -184,9 +183,9 @@
     - $\nabla_\theta J(\dots)$: 특정 위치에서의 손실 함수 $J$에 대한 기울기(Gradient)
     - $\theta_t - \gamma v_{t-1}$: **Look-ahead 위치** (현재 속도만큼 미리 이동한 지점)
 
-- 장점:
-    - **미리 보기(Look-ahead)**를 통해 오버슈팅(Overshooting)을 방지하고 급격한 기울기 변화에 안정적으로 대응
-    - 일반 모멘텀 대비 빠른 수렴 속도와 학습 안정성 확보
+    - 장점:
+        - **미리 보기(Look-ahead)**를 통해 오버슈팅(Overshooting)을 방지하고 급격한 기울기 변화에 안정적으로 대응
+        - 일반 모멘텀 대비 빠른 수렴 속도와 학습 안정성 확보
 
 ---
 
@@ -206,18 +205,18 @@
 | Loss | Cross Entropy |
 | Initialization | He Initialization |
 
----
-
-### Notes
+## Notes
 - **LR Scheduling**: 초기 학습률 0.1에서 시작하여 전체 학습의 1/3 지점(30 epoch)과 2/3 지점(60 epoch)에서 10배씩 감소시킴
 - **Dropout**: 데이터셋의 크기가 작은 CIFAR-10/100, SVHN의 경우 과적합 방지를 위해 0.2의 Dropout rate을 적용하지만, ImageNet 실험에서는 언급되지 않았음
 - **Optimization**: Nesterov Momentum(0.9)을 사용하며, dampening은 적용하지 않았음
 
 
 ## Data Preprocessing
-
-
-## Evaluation Strategy
+| Item | Description |
+|------|-------------|
+| Normalization | Channel-wise Mean & Std normalization (CIFAR) or 0~1 Scaling (SVHN) |
+| Augmentation | Standard Augmentation (Random Mirroring & Shifting) |
+| Non-Augmented | SVHN dataset (No augmentation applied) |
 
 ---
 
