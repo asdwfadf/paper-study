@@ -33,6 +33,9 @@
 
 ## Overall Architecture
 
+- ![alt text](image-1.png)
+- ![alt text](image-2.png)
+- ![alt text](image.png)
 
 ---
 
@@ -232,6 +235,26 @@ DenseNet/
 
 ## Model Implementation
 
+- `stem`, `stage1`~`stage4`, `classifier`를 각각 모듈 단위로 구현
+    - stem : 초기 Feature를 추출하는 7×7 Convolution과 Max Pooling
+    - stage1~stage4 : Dense Layer와 Transition Layer로 구성
+    - classifier : Global Average Pooling 이후 Fully Connected Layer
+
+- Dense Layer는 논문과 동일하게 Bottleneck 구조(`1×1 Conv → 3×3 Conv`)를 사용하여 구현
+    - 1×1 Convolution으로 Channel 수를 `4 × Growth Rate`로 변경
+    - 3×3 Convolution으로 새로운 Feature를 생성
+
+- 각 Dense Layer에서 생성된 Feature를 이전 Feature와 Channel 방향(`torch.cat`)으로 Concatenate하여 Feature Reuse를 구현
+
+- Transition Layer는 `1×1 Convolution + Average Pooling`으로 구현
+    - Compression Factor(θ=0.5)를 적용하여 Channel 수를 절반으로 감소
+    - Average Pooling으로 Feature Map의 공간 크기를 절반으로 감소
+
+- Dense Block(Stage)의 Forward 과정을 `forward_stage()` 함수로 분리하여 코드 중복을 제거하고 각 Stage를 동일한 방식으로 처리하도록 구현
+
+- 마지막 Feature Map은 `nn.AdaptiveAvgPool2d((1, 1))`을 사용하여 입력 해상도와 관계없이 1×1 Feature Map으로 변환한 뒤 Fully Connected Layer를 통해 최종 분류를 수행하도록 구현
+
+- Weight Initialization은 He Initialization(`Kaiming Normal`)을 적용하였으며, Bias는 0으로 초기화함
 
 ## Verification
 
@@ -239,33 +262,33 @@ DenseNet/
 |------|--------|
 | Input Shape | [2, 3, 224, 224] |
 | Output Shape | [2, 1000] |
-| conv1 params | 9,408 |
-| layer1 params | 221,952 |
-| layer2 params | 1,116,416 |
-| layer3 params | 6,822,400 |
-| layer4 params | 13,114,368 |
-| fc params | 513,000 |
-| Total params | 21,797,672 |
+| Total Parameters | 7,976,686 |
 
 ## Notes
 
+- DenseNet-121 구조를 PyTorch로 Scratch 구현
+- Growth Rate(`k=32`)를 논문과 동일하게 적용
+- 실제 데이터셋을 사용하지 않았으며, 랜덤 입력을 이용하여 모델 구조를 검증
 
 ---
 
 # 8. Analysis
 
 ## merits
-
+- Gradient 전달이 매우 좋음
+- 적은 파라미터로 높은 정확도
 
 ## demerits
-
-
-## why
-
+- 메모리를 너무 많이 사용함
+- Skip Connection 대비 연산이 비효율적임
+    - Concat으로 메모리 복사 비용이 발생
 
 ---
 
 # 9. Personal Insights
 
+- 현대 모델들은 왜 DensNet 방식보다 ResNet 방식의 Skip Connection을 사용할까?
+    - Concat 방식은 현대의 대규모 모델들에서 사용하기에는 메모리와 연산 효율 문제가 치명적임
+    - Skip Connection의 `+` 연산이 Transformer 모델에서 각 사용자의 입력에 따라서 같은 답변일지라도 말투 등이 다른 결과를 내놓는 핵심 아이디어가 되는 것 같음
 
 ---
