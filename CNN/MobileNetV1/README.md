@@ -135,16 +135,13 @@ Applications
 - **Optimizer**: Inception V3와 유사하게 RMSprop 알고리즘을 사용한 비동기식 경사 하강법을 적용함
 - **Regularization**: 작은 모델은 과적합(overfitting) 문제에서 상대적으로 자유로우므로, 대형 모델에 사용되는 Label Smoothing이나 Side heads와 같은 추가적인 정규화 기법을 사용하지 않음 
 - **Weight Decay**: Depthwise 필터는 파라미터 수가 매우 적기 때문에, 과도한 L2 정규화가 성능을 저해할 수 있어 매우 적게 설정하거나 적용하지 않음
+- **Distortion**: 대규모 Inception 학습 시 사용되는 데이터 증강보다 이미지 왜곡(distortion)의 양을 의도적으로 줄임. 작은 모델에서 과도한 증강은 학습 효율을 저해할 수 있기 때문임
 
 ## Data Preprocessing
 | Item | Description |
 |------|-------------|
 | Augmentation | Reduced image distortion (limited size of small crops) |
 | Scaling | Inception-style distortion minimization |
-
----
-## Notes on Preprocessing
-- **Distortion**: 대규모 Inception 학습 시 사용되는 데이터 증강보다 이미지 왜곡(distortion)의 양을 의도적으로 줄임. 작은 모델에서 과도한 증강은 학습 효율을 저해할 수 있기 때문임
 
 ---
 
