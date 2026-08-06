@@ -1,6 +1,6 @@
 # 1. Paper Information
 
-- Title: MobileNets: MobileNetV2: Inverted Residuals and Linear Bottlenecks
+- Title: MobileNetV2: Inverted Residuals and Linear Bottlenecks
 - Paper URL: [https://arxiv.org/pdf/1801.04381]
 
 ---
@@ -201,6 +201,6 @@ MobileNetV2/
 
 # 9. Personal Insights
 
-- 저차원 공간에서는 ReLU가 더 큰 정보 손실을 발생시킬 수 있기 때문에 일부러 비선형성을 제거했다는 점이 기존 CNN들과 다른 접근 방식이었다.
+- 저차원 공간에서는 ReLU가 더 큰 정보 손실을 발생시킬 수 있기 때문에 일부러 제거했다는 점이 기존 CNN들과 다른 접근 방식이었다.
 
 ---
