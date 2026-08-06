@@ -123,7 +123,7 @@ class MobileNetV3(nn.Module):
             nn.Conv2d(in_c, 576, 1, stride=1, bias=False),
             nn.BatchNorm2d(576, momentum=0.99),
             nn.Hardswish(inplace=True),
-            # SqueezeExcitation(576, 4), 논문 Table 2에는 있다고 표시되있는데 없애는게 파라미터 갯수가 맞음
+            # SqueezeExcitation(576, 4),
         )
 
         self.gap = nn.AdaptiveAvgPool2d((1, 1))
