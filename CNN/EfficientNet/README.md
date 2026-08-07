@@ -37,15 +37,6 @@
 ## Overall Architecture
 
 ![alt text](image.png)
-![alt text](image-1.png)
-### MobileNetV3-Large
-![alt text](image-3.png)
-### MobileNetV3-Small
-![alt text](image-4.png)
-
----
-
-## Components
 
 ## Components
 
@@ -153,26 +144,31 @@ EfficientNet/
 
 ## Model Implementation
 
-- MobileNetV3 Small Architecture를 PyTorch로 Scratch 구현
-- Batch Normalization은 논문의 구현과 동일하게 `momentum=0.99`를 사용
-- Width/Resolution Multiplier는 구현하지 않았음
+- EfficientNet-B0 Architecture를 PyTorch로 Scratch 구현
+- Residual Connection은 `stride=1`이고 입력/출력 채널 수가 동일한 경우에만 적용
+- Stochastic_depth는 Residual Connection 적용할 때만 적용
+    - Residual Connection이 없을 때 적용하면 출력값이 0이 되기 때문에 학습이 진행은 되지만 망함
+        - xW+b = 0W+b = b
+            - b 값만 가지고 학습 진행됨 ..
 - Weight Initialization
-    - Convolution Layer : Kaiming Normal Initialization (`fan_out`)
-    - Linear Layer : Normal Distribution (mean=0, std=0.01)
-    - Bias : 0으로 초기화
+  - Convolution Layer : Kaiming Normal Initialization (`fan_out`)
+  - Linear Layer : Uniform Initialization (`±1 / √out_features`)
+  - Bias : 0으로 초기화
 
 ## Verification
 
 | Item | Result |
 |------|--------|
-| Input Shape | [2, 3, 224, 224] |
-| Output Shape | [2, 1000] |
-| Total Parameters | 2,537,238 |
+| Input Shape | [1, 3, 224, 224] |
+| Output Shape | [1, 1000] |
+| Total Parameters | 5,288,548 |
+| FLOPs | 421,872,480 |
 
 ## Notes
 
-![alt text](image-5.png)
-Table 2에서는 Conv Tail 이후 SE Block이 표시되어 있으나, 공개 구현 및 파라미터 수를 보니 없는게 맞는 것 같다.
+- EfficientNet 논문에서는 Width Multiplier 적용 시 채널 수를 단순히 곱하지 않고 `make_divisible()`을 사용하여 8의 배수로 반올림한다. 현재 구현은 `int(channel × width_mult)`를 사용하였다.
+- 논문에서는 Block이 깊어질수록 Stochastic Depth 확률을 선형적으로 증가시키지만, 현재 구현은 모든 MBConv Block에 동일한 확률(`0.2`)을 적용하였다.
+- B0 기준(`width_mult=1.0`, `depth_mult=1.0`)에서는 Compound Scaling의 구조가 논문와 동일하게 동작한다.
 
 ---
 
@@ -191,6 +187,13 @@ Table 2에서는 Conv Tail 이후 SE Block이 표시되어 있으나, 공개 구
 
 - **하드웨어 친화적 설계 (h-swish & SE)**
     - 지수 연산이 포함된 $swish$를 하드웨어에서 매우 빠른 `h-swish`로 대체하고, SE 모듈의 병목 크기를 고정하여 하드웨어 가속기에서의 지연 시간을 최적화함.
+
+## why?
+
+- 깊이, 너비, 해상도를 왜 셋 다 키워야됨?
+    - 해상도가 224*224 -> 1000*1000으로 커졌다면
+        - 깊이도 커져야됨 -> 그래야 receptive field도 커져서 큰 해상도에 있는 많은 정보를 뽑아 먹을 수 있으니까
+        - 너비도 커져야됨 -> 정보가 많은 만큼 필터의 갯수도 많아야 더 많은 특징을 뽑을 수 있으니까  
 
 # 9. Personal Insights
 
