@@ -102,8 +102,8 @@ class EfficientNetB0(nn.Module):
             [3, 6, 320, 1, 1],
         ]
 
-        in_c = int(32 * width_mult)
-        last_c = int(1280 * width_mult)
+        in_c = self.make_divisible(32 * width_mult)
+        last_c = self.make_divisible(1280 * width_mult)
 
         self.stem = nn.Sequential(
             nn.Conv2d(3, in_c, 3, stride=2, padding=1, bias=False),
@@ -116,8 +116,8 @@ class EfficientNetB0(nn.Module):
             L = math.ceil(L * depth_mult)
             for i in range(L):
                 stride = s if i == 0 else 1
-                exp_c = int(in_c * t)
-                out_c = int(out_c * width_mult)
+                exp_c = self.make_divisible(in_c * t)
+                out_c = self.make_divisible(out_c * width_mult)
                 layers += [MBConv(in_c, exp_c, out_c, k, stride, sd_prob=0.2)]
                 in_c = out_c
 
@@ -144,6 +144,18 @@ class EfficientNetB0(nn.Module):
                 init_range = 1.0 / torch.sqrt(torch.tensor(m.out_features))
                 nn.init.uniform_(m.weight, -init_range, init_range)
                 nn.init.zeros_(m.bias)
+
+    def make_divisible(self, v, divisor=8, min_value=None):
+        if min_value is None:
+            min_value = divisor
+
+        new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
+
+        # 원래 값보다 10% 이상 감소하지 않도록 보정
+        if new_v < 0.9 * v:
+            new_v += divisor
+
+        return new_v
 
     def forward(self, x):
         x = self.stem(x)
