@@ -1,7 +1,7 @@
 # 1. Paper Information
 
-- Title: Attention Is All You Need
-- Paper URL: [https://arxiv.org/pdf/1706.03762]
+- Title: GPT (Generative Pre-trained Transformer) – A Comprehensive Review on Enabling Technologies, Potential Applications, Emerging Challenges, and Future Directions
+- Paper URL: [https://arxiv.org/pdf/2305.10435]
 
 ---
 
