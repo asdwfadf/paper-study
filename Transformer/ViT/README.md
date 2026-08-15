@@ -120,7 +120,6 @@
 
 # 6. Implementation
 
-
 ## Directory Structure
 
 ViT/
@@ -130,51 +129,41 @@ ViT/
 
 ## Model Implementation
 
-- Transformer Architecture를 PyTorch로 Scratch 구현
-- Sinusoidal Positional Encoding 구현
-  - `sin`, `cos` 함수를 이용하여 위치 정보 생성
-  - `register_buffer`를 사용하여 학습되지 않는 Positional Encoding으로 등록
-- Multi-Head Attention 구현
-  - Query, Key, Value를 각각 Linear Layer로 projection
-  - `einops.rearrange`를 이용하여 Multi-Head 형태로 변환
-  - Scaled Dot-Product Attention 적용
-  - 각 Head의 결과를 결합한 후 Linear Layer를 통해 projection
-- Encoder 구현
-  - Multi-Head Self-Attention
-  - Residual Connection + Layer Normalization
-  - Position-wise Feed-Forward Network
-  - Residual Connection + Layer Normalization
-  - `nn.ModuleList`를 사용하여 여러 Encoder Layer 구성
-- Decoder 구현
-  - Masked Multi-Head Self-Attention
-  - Encoder-Decoder Cross Attention
-  - Position-wise Feed-Forward Network
-  - 각 Sublayer에 Residual Connection + Layer Normalization 적용
-  - `nn.ModuleList`를 사용하여 여러 Decoder Layer 구성
-- Feed-Forward Network
-  - `Linear → ReLU → Dropout → Linear` 구조
-- Attention Mask
-  - Encoder Padding Mask
-  - Decoder Causal Mask
-  - Encoder-Decoder Cross Attention Padding Mask
-- Token Embedding
-  - Embedding 출력에 `√d_model` scaling 적용
-- Weight Initialization
-  - Weight Tensor의 차원이 2 이상인 Layer에 Xavier Uniform Initialization 적용
-  - Layer Normalization의 1차원 weight는 Xavier Initialization에서 제외
+- **Vision Transformer Architecture**
+  - PyTorch를 사용하여 논문의 구조를 Scratch 구현.
+- **Learnable Positional Embedding**
+  - 논문에서 제시한 대로 `nn.Parameter`를 사용하여 위치 정보를 학습 가능한 가중치로 구현.
+  - 고정된 `sin`, `cos` 함수가 아닌 데이터에 따라 최적화되는 방식 채택.
+- **Multi-Head Self-Attention**
+  - Query, Key, Value를 각각 Linear Layer로 투영(Projection).
+  - `einops.rearrange`를 사용하여 병렬 헤드 처리를 위한 차원 재구성.
+  - Scaled Dot-Product Attention 계산 후 Softmax 적용.
+- **Encoder Block**
+  - Pre-norm 구조 채택.
+  - Multi-Head Self-Attention + Residual Connection.
+  - MLP Block (GELU 활성화 함수 사용) + Residual Connection.
+- **Feed-Forward Network (MLP Block)**
+  - `Linear → GELU → Dropout → Linear → Dropout` 구조.
+  - 중간 차원을 `mlp_size` (기본 3072)로 확장하여 표현력 확보.
+- **Token Embedding**
+  - `nn.Conv2d`를 사용하여 패치 분할 및 선형 투영(Linear Projection) 동시 수행.
+  - [CLS] 토큰을 시퀀스 맨 앞에 결합하여 이미지 전체 문맥 정보 집약.
+- **Weight Initialization**
+  - `nn.init.trunc_normal_` (std=0.02)를 사용하여 가중치 및 위치 임베딩 초기화.
+  - Layer Normalization의 bias는 0, weight는 1로 초기화하여 학습 안정성 확보.
 
 ## Verification
 
 | Item             | Result |
 | ---------------- | ------ |
-| Input Shape      | `[3, 20]`, `[3, 15]` |
-| Output Shape     | `[3, 15, 320000]` |
-| Total Parameters | `372,138,496` |
-| FLOPs            | `9,705,876,480` |
+| Input Shape      | `[1, 3, 224, 224]` |
+| Output Shape     | `[1, 1000]` |
+| Total Parameters | 86,566,120 |
+| FLOPs | 17581983744 |
 
 ## Notes
 
-- 랜덤한 Source / Target Token을 입력으로 사용하여 순전파 검증
+- 랜덤 데이터를 입력으로 사용하여 순전파 검증
 
 ---
 
@@ -182,26 +171,24 @@ ViT/
 
 ## Merits
 
-- **병렬 처리 극대화**: 순환(Recurrence) 구조를 제거하여 모든 토큰을 병렬로 처리함. 이를 통해 최신 GPU 자원을 최대한 활용하여 학습 속도를 획기적으로 단축함.
-- **장거리 의존성 학습**: 임의의 두 위치 사이의 경로 길이가 $O(1)$로 고정되어, 문장 내 거리가 먼 단어들 간의 관계를 효과적으로 포착함.
-- **모델 확장성**: 모델 차원($d$)을 키울 때 계산 비용이 선형적으로 증가하여, RNN 대비 훨씬 큰 규모의 모델을 효율적으로 학습할 수 있음.
-- **범용성**: 기계 번역을 넘어 구문 분석 등 다양한 시퀀스 변환 태스크에서 일관된 성능 향상을 입증함.
+- **대규모 학습의 효율성**: CNN의 귀납적 편향(Inductive Bias)에 의존하는 대신, 대규모 데이터셋(JFT-300M 등)에서의 사전 학습을 통해 성능의 포화점을 극복함. 스케일링 법칙(Scaling Law)이 비전 태스크에서도 유효함을 입증함.
+- **전역적 정보 통합**: 초기 레이어부터 이미지 전체를 조망하는 전역적 어텐션(Global Attention)을 통해, CNN이 수많은 층을 거쳐야 도달하는 수용장(Receptive Field)을 즉각적으로 확보함.
+- **연산 자원 최적화**: 최신 가속기(TPU/GPU)에서 병렬 연산에 최적화된 Transformer 구조를 채택함으로써, 기존 SOTA CNN 모델들보다 상대적으로 적은 연산 비용으로 더 높은 정확도를 달성함.
+- **범용적 구조**: 이미지 패치를 텍스트 토큰과 동일한 시퀀스로 처리함으로써, 향후 멀티모달(Vision + Language) 모델로의 확장 가능성을 열어줌.
 
 ## Demerits
 
-- **높은 계산 복잡도**: 어텐션 스코어 계산에 $O(n^2)$의 메모리와 연산량이 필요하여, 시퀀스 길이가 매우 길어질 경우 자원 소모가 급격히 증가함.
-- **위치 정보 부족**: 구조적으로 입력 토큰의 순서를 인식할 수 없어 별도의 Positional Encoding 주입이 필수적임.
-- **학습 초기 불안정성**: 정교한 Warmup 학습률 스케줄링과 라벨 스무딩 없이는 수렴이 어렵고, 학습 초기 파라미터 업데이트에 민감함.
-- **데이터 의존성**: 소규모 데이터셋 환경에서는 순환 신경망 계열보다 성능이 낮을 수 있어, 충분한 학습 데이터가 뒷받침되어야 함.
+- **데이터 갈증(Data Hunger)**: CNN이 가진 이동 불변성 등 강력한 귀납적 편향이 없기 때문에, 소규모 데이터셋(ImageNet 등)에서는 성능이 현저히 낮으며 학습 초기 파라미터 업데이트에 매우 민감함.
+- **해상도 및 패치 크기 제약**: 입력 시퀀스 길이가 이미지 패치 크기의 제곱에 반비례하여 증가하므로, 고해상도 이미지를 입력할 경우 메모리 및 연산 복잡도가 급격히 상승함($O(n^2)$).
+- **입력 구조의 이질성**: CNN과 달리 2차원 공간 정보를 내재하지 않아, 이를 보완하기 위한 위치 임베딩(Positional Embedding) 설계와 2D 보간(Interpolation) 기술이 모델의 핵심 성능을 좌우함.
 
 ## why?
 
-- Masked Self-Attention가 왜 필요할까? 미래 정보를 왜 못 보게 해야될까?
-  - 미래 정보를 볼 수 있는 상태로 학습하면 해당 정보로 강하게 어텐션이 될텐데 실제 테스트 시에는 미래 정보가 없기 때문에 고장나버림..
-    - 공부할 때 맨날 정답지 보고 맞추다가 실제 시험 때는 정답지가 없어서 못 맞추는 것과 같음
+- ViT는 왜 패치(Patch) 단위로 이미지를 처리해야 할까?
+  - 픽셀 단위로 직접 어텐션을 적용할 경우 픽셀 개수의 제곱($O(H^2W^2)$)만큼 연산량이 폭증하여 현대 하드웨어에서 학습이 불가능하기 때문임.
+  - 패치 분할은 이미지의 고해상도 정보는 유지하면서 연산량을 관리 가능한 시퀀스 길이로 압축하는 필수적인 타협점임.
 
-- Softmax 후가 아닌 전에 마스킹 처리 하는 이유
-  - 마스킹 먼저 하고 softmax 하면 `[1, 0, 0]` 이 나옴
-  - softmax 후 마스킹 처리 하면 `[0.6, 0, 0]` 이런 식으로 나와서 안됨
-
+- 어텐션 맵(Attention Map)의 해석 가능성 (왜 이 영역을 보고 있을까?)
+  - ViT의 어텐션 맵을 시각화하면, 모델이 단순히 픽셀을 보는 것이 아니라 사물의 핵심적인 형태나 의미론적(Semantic)으로 중요한 영역을 스스로 탐색함을 알 수 있음.
+  - 학습 초기에는 전역적인 정보를 흩뿌리듯 참조하지만, 학습이 진행될수록 물체의 특징적인 부분에 가중치를 집중시키는 정교함을 보임.
 ---
