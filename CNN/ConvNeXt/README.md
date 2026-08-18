@@ -27,103 +27,225 @@
 - Patchify stem : 맨 처음 해상도 줄이는 과정을 4x4 conv(stride=4)로 대체
   - swin의 맨 처음이랑 동일하게 함
 
-ing~~
+- 3 x 3 depthwise conv(ResNeXt 아이디어)를 사용해서 파라미터 수를 줄이고 이어서 1 x 1 separable conv(MobileNet V1 아이디어)로 채널 수를 늘림
+  - ViT랑 비슷한 매커니즘임
+    - depthwise conv : 공간(spatial) 정보만 봄 = self-attention
+    - separable conv : 채널(channel) 정보만 봄 = Q,K,V 만들 때, MHA의 MLP, FeedForward
 
+![alt text](image.png)
+  - MHA로 공간 정보 연산 후 FeedForward에서 4배 늘렸다 줄이는 행위(c)
+
+- Kernel size를 Swin의 Window size와 같은 7x7로 바꿈
+  - 여러 사이즈를 테스트 해봤는데, 7x7이 가장 성능이 좋았음
+
+![alt text](image-1.png)
+- Activation 변경
+  - ReLU -> GELU
+  - 3번 -> 1번, Normalization도 1번
+    - 정보 손실을 최소화 하기 위해서 채널 수를 늘린 후만 Activation 사용
+
+- Downsampling을 Swin의 Patchmerging 처럼 블록 안에서 안하고 원할 때만 2x2 Conv(stride=2)를 사용
+  - 훈련이 잘 안되서 앞에 LN 추가했더니 잘 됨
+    - 이유는 명시해놓지 않았음
 
 ---
-
 
 # 3. Model Architecture & Forward Process
 
 ## Overall Architecture
 
-![alt text](image.png)
 ![alt text](image-1.png)
+![alt text](image-2.png)
 
 ## Components
 
-### Swin Transformer Block
+### ConvNeXt Block
 
 **Purpose**
-- 이미지 패치의 특징을 변환하고, 주변 패치 간의 관계를 학습합니다.
+- 입력 feature map의 공간적 정보와 채널 정보를 효율적으로 변환합니다.
+- Transformer block의 설계에서 영감을 받았지만, self-attention 없이 표준 convolution 연산만 사용합니다.
 
 **Configuration**
-- **Window-based MSA**: 전체 이미지가 아닌 작은 윈도우 안에서만 셀프 어텐션을 계산합니다.
-- **Shifted Window MSA**: 다음 블록에서 윈도우 위치를 이동하여 서로 다른 윈도우의 정보가 연결되도록 합니다.
-- **MLP Block**: 각 패치의 특징을 두 번의 선형 변환과 GELU 활성화 함수로 정제합니다.
-- **LayerNorm & Residual Connection**: 각 블록에 정규화와 잔차 연결을 적용하여 안정적인 학습을 돕습니다.
+- **Depthwise Convolution**: 각 채널별로 독립적인 $7 \times 7$ depthwise convolution을 적용하여 spatial mixing을 수행합니다.
+- **Inverted Bottleneck**: 첫 번째 $1 \times 1$ convolution으로 채널 차원을 확장합니다.
+- **GELU Activation**: 확장된 채널 feature에 GELU 활성화 함수를 한 번 적용합니다.
+- **Pointwise Convolution**: 두 번째 $1 \times 1$ convolution으로 채널 차원을 원래 차원으로 축소합니다.
+- **LayerNorm**: depthwise convolution 이후 채널 방향으로 LayerNorm을 적용합니다.
+- **Residual Connection**: block의 입력을 변환된 출력에 더합니다.
+- **Layer Scale**: residual branch에 초기값 $10^{-6}$의 Layer Scale을 적용합니다.
 
 **Role**
-- 전체 패치 간의 관계를 계산하는 방식보다 연산량을 줄입니다.
-- Shifted Window를 통해 지역 윈도우의 한계를 보완합니다.
+- $7 \times 7$ depthwise convolution으로 주변 spatial 위치의 정보를 혼합합니다.
+- $1 \times 1$ convolution으로 채널 간 정보를 혼합합니다.
+- Spatial mixing과 channel mixing을 분리하여 Transformer의 block 구조와 유사한 연산 흐름을 구성합니다.
+- Self-attention이나 shifted window와 같은 특수한 attention 모듈 없이 계층적 feature representation을 학습합니다.
 
 **Output**
-- 입력과 동일한 패치 개수와 특징 차원을 유지합니다.
-- 출력 형태: $(B, H \times W, C)$
+- 일반적인 ConvNeXt block은 입력과 동일한 해상도와 채널 수를 유지합니다.
+- 입력과 출력의 형태는 다음과 같습니다.
 
-### Patch Merging
+$$
+(B, H, W, C) \rightarrow (B, H, W, C)
+$$
+
+- Residual connection을 적용하기 위해 block 내부의 최종 채널 차원은 입력 채널 차원과 동일합니다.
+
+### Downsampling Layer
 
 **Purpose**
-- 네트워크가 깊어질수록 패치 수를 줄이고 더 높은 수준의 특징을 추출합니다.
+- Stage가 전환될 때 feature map의 spatial resolution을 낮춥니다.
+- 해상도를 줄이는 동시에 채널 차원을 증가시켜 더 높은 수준의 특징을 추출합니다.
 
 **Mechanism**
-- 인접한 $2 \times 2$ 패치의 특징을 하나로 합칩니다.
-- 특징 맵의 해상도는 절반으로 줄고, 채널 차원은 증가합니다.
+- $2 \times 2$ convolution과 stride $2$를 사용합니다.
+- Downsampling layer를 residual block과 분리하여 독립적인 계층으로 구성합니다.
+- 해상도가 변경되는 위치에 LayerNorm을 추가하여 학습을 안정화합니다.
 
 **Role**
-- CNN처럼 단계적인 계층적 특징 맵을 생성합니다.
-- 객체 탐지와 시맨틱 세그멘테이션에 필요한 다양한 해상도의 특징을 제공합니다.
+- ConvNet과 유사한 계층적 feature map을 생성합니다.
+- 서로 다른 해상도의 feature map을 제공하여 object detection과 semantic segmentation 같은 downstream task에 활용할 수 있도록 합니다.
+
+**Output**
+
+$$
+(B, H, W, C)
+\rightarrow
+(B, H/2, W/2, 2C)
+$$
+
+### Patchify Stem
+
+**Purpose**
+- 입력 이미지의 초기 spatial resolution을 줄이고, 첫 번째 feature map을 생성합니다.
+
+**Mechanism**
+- $4 \times 4$ convolution과 stride $4$를 사용합니다.
+- 입력 이미지를 명시적인 token sequence로 변환하지 않고 convolution을 통해 feature map을 생성합니다.
+- Stem 이후 LayerNorm을 적용합니다.
+
+**Output**
+
+$$
+(B, H, W, 3)
+\rightarrow
+(B, H/4, W/4, 96)
+$$
+
+- ConvNeXt-T의 첫 번째 Stage에서는 채널 차원 $C=96$을 사용합니다.
 
 ## Forward Process
 
-### 1. Patch Partition
+### 1. Patchify Stem
 
-- 입력 이미지를 작은 패치로 나눕니다.
-- 기본 패치 크기는 $4 \times 4$입니다.
-- 각 패치를 하나의 토큰으로 변환합니다.
-
-### 2. Linear Embedding
-
-- 패치의 픽셀 값을 선형 변환하여 특징 벡터로 변환합니다.
-- 첫 번째 단계의 출력 형태는 다음과 같습니다.
+- 입력 이미지에 $4 \times 4$ convolution과 stride $4$를 적용합니다.
+- 입력 이미지의 높이와 너비가 각각 $1/4$로 줄어듭니다.
 
 $$
-(B, H/4 \times W/4, C)
+(B, H, W, 3)
+\rightarrow
+(B, H/4, W/4, 96)
 $$
 
-### 3. Swin Transformer Blocks
+### 2. Stage 1
 
-- 각 단계에서 일반 윈도우와 Shifted Window를 번갈아 사용합니다.
-- 윈도우 내부의 패치 관계를 학습하고, Shifted Window를 통해 윈도우 간 정보를 교환합니다.
-
-### 4. Patch Merging
-
-- 각 단계가 끝난 뒤 인접한 패치를 병합합니다.
-- 단계가 깊어질수록 해상도는 낮아지고 특징 차원은 커집니다.
-
-| Stage | 특징 맵 해상도 |
-|---|---|
-| Stage 1 | $H/4 \times W/4$ |
-| Stage 2 | $H/8 \times W/8$ |
-| Stage 3 | $H/16 \times W/16$ |
-| Stage 4 | $H/32 \times W/32$ |
-
-### 5. Position Information
-
-- Swin Transformer는 ViT처럼 별도의 절대적 위치 임베딩을 사용하지 않습니다.
-- 대신 각 윈도우의 패치 간 상대적 위치를 나타내는 상대적 위치 편향(relative position bias)을 사용합니다.
-- 이를 통해 윈도우 안에서 패치의 공간적 관계를 학습합니다.
-
-### 6. Final Output
-
-- 이미지 분류에서는 마지막 Stage의 특징 맵에 전역 평균 풀링을 적용합니다.
-- 이후 선형 분류기를 사용해 최종 클래스 예측을 수행합니다.
+- 첫 번째 feature map에 ConvNeXt block을 반복적으로 적용합니다.
+- ConvNeXt-T에서는 Stage 1에 $3$개의 block을 사용합니다.
+- Feature map의 spatial resolution은 유지됩니다.
 
 $$
-(B, H/32 \times W/32, C) \rightarrow (B, C) \rightarrow (B, K)
+(B, H/4, W/4, 96)
+\rightarrow
+(B, H/4, W/4, 96)
 $$
 
-- 객체 탐지와 시맨틱 세그멘테이션에서는 각 Stage의 다중 해상도 특징 맵을 백본 출력으로 사용합니다.
+### 3. Downsampling Layer 1
+
+- Stage 1이 끝난 뒤 $2 \times 2$ convolution과 stride $2$를 적용합니다.
+- 해상도는 절반으로 줄고 채널 수는 증가합니다.
+
+$$
+(B, H/4, W/4, 96)
+\rightarrow
+(B, H/8, W/8, 192)
+$$
+
+### 4. Stage 2
+
+- ConvNeXt block을 반복적으로 적용하여 feature를 변환합니다.
+- ConvNeXt-T에서는 Stage 2에 $3$개의 block을 사용합니다.
+
+$$
+(B, H/8, W/8, 192)
+\rightarrow
+(B, H/8, W/8, 192)
+$$
+
+### 5. Downsampling Layer 2
+
+$$
+(B, H/8, W/8, 192)
+\rightarrow
+(B, H/16, W/16, 384)
+$$
+
+### 6. Stage 3
+
+- ConvNeXt-T에서는 Stage 3에 $9$개의 ConvNeXt block을 사용합니다.
+- 네 개의 Stage 중 가장 많은 block을 배치하여 계산량을 집중합니다.
+
+$$
+(B, H/16, W/16, 384)
+\rightarrow
+(B, H/16, W/16, 384)
+$$
+
+### 7. Downsampling Layer 3
+
+$$
+(B, H/16, W/16, 384)
+\rightarrow
+(B, H/32, W/32, 768)
+$$
+
+### 8. Stage 4
+
+- ConvNeXt-T에서는 Stage 4에 $3$개의 ConvNeXt block을 사용합니다.
+- 최종 고수준 semantic feature를 생성합니다.
+
+$$
+(B, H/32, W/32, 768)
+\rightarrow
+(B, H/32, W/32, 768)
+$$
+
+### 9. Head
+
+- 마지막 Stage의 feature map에 global average pooling을 적용합니다.
+- Global average pooling 이후 최종 feature는 ConvNeXt-T의 마지막 채널 차원인 $768$이 됩니다.
+- 이후 선형 분류기를 통해 ImageNet-1K의 $1{,}000$개 클래스에 대한 예측을 수행합니다.
+
+$$
+(B, H/32, W/32, 768)
+\rightarrow
+(B, 768)
+\rightarrow
+(B, 1000)
+$$
+
+
+## ConvNeXt-T 전체 구조 요약
+
+| 단계 | 연산 | Block 수 | 출력 해상도 | 출력 채널 |
+|---|---|---:|---:|---:|
+| Stem | $4 \times 4$ convolution, stride $4$ | - | $H/4 \times W/4$ | $96$ |
+| Stage 1 | ConvNeXt block | $3$ | $H/4 \times W/4$ | $96$ |
+| Downsampling 1 | $2 \times 2$ convolution, stride $2$ | - | $H/8 \times W/8$ | $192$ |
+| Stage 2 | ConvNeXt block | $3$ | $H/8 \times W/8$ | $192$ |
+| Downsampling 2 | $2 \times 2$ convolution, stride $2$ | - | $H/16 \times W/16$ | $384$ |
+| Stage 3 | ConvNeXt block | $9$ | $H/16 \times W/16$ | $384$ |
+| Downsampling 3 | $2 \times 2$ convolution, stride $2$ | - | $H/32 \times W/32$ | $768$ |
+| Stage 4 | ConvNeXt block | $3$ | $H/32 \times W/32$ | $768$ |
+| Head | Global average pooling 및 linear classifier | - | - | $1{,}000$ classes |
 
 ---
 
@@ -133,50 +255,15 @@ $$
 
 # 5. Training Configuration
 
-### 훈련 하이퍼파라미터 및 데이터 전처리
-
-| 분류 | 항목 | 설정 및 상세 설명 |
-| :--- | :--- | :--- |
-| **Optimization** | Optimizer | AdamW 사용 |
-| | ImageNet-1K 학습 | 300 epochs, 초기 학습률 $0.001$, cosine decay, 20 epochs warm-up |
-| | ImageNet-22K 사전 학습 | 90 epochs, 초기 학습률 $0.001$, linear decay, 5 epochs warm-up |
-| | Weight Decay | 일반 학습에서 $0.05$, ImageNet-22K 사전 학습에서 $0.01$ |
-| **Data** | Classification | ImageNet-1K 및 ImageNet-22K 사용 |
-| | Object Detection | COCO 2017 사용 |
-| | Semantic Segmentation | ADE20K 사용 |
-| **Preprocessing** | Patch Processing | 입력 이미지를 $4 \times 4$ 패치로 분할 |
-| | ImageNet 입력 크기 | 기본 $224 \times 224$, 일부 실험에서 $384 \times 384$로 미세 조정 |
-| | Detection 입력 크기 | 짧은 변을 $480$에서 $800$ 사이로 조정하고 긴 변은 최대 $1333$으로 제한 |
-| | Segmentation 입력 크기 | Swin-T와 Swin-S는 $512 \times 512$, Swin-B와 Swin-L은 $640 \times 640$ 사용 |
-| **Batching** | ImageNet-1K | 배치 크기 $1024$ |
-| | ImageNet-22K | 배치 크기 $4096$ |
-| | Object Detection | 배치 크기 $16$ |
-| **Augmentation** | Image Classification | RandAugment, Mixup, CutMix, Random Erasing, Stochastic Depth 사용 |
-| | Semantic Segmentation | 무작위 좌우 반전, 무작위 크기 조정, 색상 왜곡 사용 |
-| **Fine-tuning** | ImageNet 해상도 조정 | $224 \times 224$로 학습한 모델을 $384 \times 384$ 입력에 맞게 미세 조정 |
-| | ImageNet-22K 전이 | ImageNet-22K로 사전 학습한 모델을 ImageNet-1K에서 미세 조정 |
-| **Hardware** | 실험 환경 | V100 GPU에서 처리량과 실제 속도를 측정 |
-
-## Notes
-
-- ImageNet-1K 학습에서는 300 epochs, 초기 학습률 $0.001$, cosine decay, 20 epochs의 선형 warm-up을 적용합니다.
-- ImageNet-22K 사전 학습에서는 90 epochs, 초기 학습률 $0.001$, linear decay, 5 epochs의 warm-up을 사용합니다.
-- ImageNet-1K 학습의 weight decay는 $0.05$, ImageNet-22K 사전 학습의 weight decay는 $0.01$입니다.
-- 분류 모델은 RandAugment, Mixup, CutMix, Random Erasing, Stochastic Depth 등의 데이터 증강 및 정규화 기법을 사용합니다.
-- ImageNet-1K에서는 기본 입력 크기로 $224 \times 224$를 사용하고, 더 큰 입력 크기인 $384 \times 384$에서는 기존 모델을 미세 조정합니다.
-- Swin Transformer는 ViT처럼 별도의 class 토큰을 사용하지 않습니다.
-- 이미지 분류에서는 마지막 Stage의 특징 맵에 전역 평균 풀링을 적용한 뒤 선형 분류기를 사용합니다.
-- 객체 탐지 실험에서는 AdamW, 초기 학습률 $0.0001$, weight decay $0.05$, 배치 크기 $16$, 36 epochs의 학습 일정을 사용합니다.
-- 시맨틱 세그멘테이션 실험에서는 AdamW, 초기 학습률 $6 \times 10^{-5}$, weight decay $0.01$, linear decay, 1,500 iterations의 warm-up을 사용합니다.
+![alt text](image-3.png)
 
 ---
-
 
 # 6. Implementation
 
 ## Directory Structure
 
-Swin/
+ConvNeXt/
 ├── README.md
 ├── model.py
 └── main.py
@@ -231,6 +318,14 @@ Swin/
 ---
 
 # 7. Analysis & Insights
+
+![alt text](image-4.png)
+  - 모델 및 데이터 규모를 키울수록 성능이 좋아짐
+  - 전체적으로 Swin 보다 성능 우수
+  - EfficientNet V2 보다도 성능은 우수하지만 속도는 뒤쳐짐
+
+- CNN도 scalable 할 수 있다는 것을 보인 연구지만 Swin과 EfficientNet 보다 훨씬 좋은 것은 아님
+- AI의 지속적인 발전을 생각했을 때(multi-modal) 역시 Transformer가 좋은듯..
 
 ## Merits
 
