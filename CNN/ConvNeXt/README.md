@@ -270,50 +270,100 @@ ConvNeXt/
 
 ## Model Implementation
 
-- **Swin Transformer Architecture**
-  - 논문의 계층적 구조를 `BasicLayer`와 `PatchMerging` 클래스로 나누어 구현함.
-  - Swin-T 설정은 `embed_dim=96`, `depths=(2, 2, 6, 2)`, `num_heads=(3, 6, 12, 24)`로 지정함.
+- **ConvNeXt Architecture**
+  - 논문의 계층적 ConvNet 구조를 하나의 `ConvNeXt_T` 클래스와 여러 개의 `CNBlock`으로 나누어 구현함.
+  - 전체 ConvNeXt block 수는 다음과 같음.
 
-- **Patch Embedding**
-  - 논문의 Patch Partition과 Linear Embedding을 `nn.Conv2d` 하나로 구현함.
+  $$
+  3 + 3 + 9 + 3 = 18
+  $$
 
-- **Window-based Multi-Head Self-Attention**
-  - 논문의 윈도우 단위 어텐션을 `window_partition()`과 `WindowAttention` 클래스로 구현함.
+- **Patchify Stem**
+  - 논문의 patchify stem을 `nn.Conv2d` 하나로 구현함.
+  - 입력 이미지에 `kernel_size=4`, `stride=4`인 convolution을 적용하여 spatial resolution을 4배 축소함.
+  - Stem 이후 `Permute`를 사용하여 채널 축을 마지막으로 이동한 뒤 `LayerNorm`을 적용하고, 다시 `NCHW` 형식으로 변환함.
 
-- **Relative Position Bias**
-  - 논문의 상대적 위치 편향을 `relative_position_bias_table`과 `relative_position_index`로 구현함.
+- **ConvNeXt Block**
+  - 논문의 ConvNeXt block을 `CNBlock` 클래스로 구현함.
+  - 각 block은 `7 × 7` depthwise convolution, LayerNorm, 두 개의 `1 × 1` convolution, GELU, Layer Scale, Stochastic Depth, residual connection으로 구성함.
+  - 입력과 출력의 feature map 크기는 동일하게 유지함.
 
-- **Shifted Window Attention**
-  - 논문의 일반 윈도우와 Shifted Window 교대 방식을 `shift_size=0`과 `shift_size=window_size // 2`로 구현함.
-  - `torch.roll()`을 사용해 특징 맵을 순환 이동하고, `create_attention_mask()`로 윈도우 경계를 넘는 잘못된 어텐션을 차단함.
+- **Depthwise Convolution**
+  - spatial mixing을 위해 `groups=in_c`로 설정한 `nn.Conv2d`를 사용함.
+  - convolution kernel 크기는 `7 × 7`, stride는 $1$, padding은 $3$으로 설정함.
+  - 채널 수와 group 수를 동일하게 설정하여 각 채널을 독립적으로 convolution함.
 
-- **Swin Transformer Block**
-  - 논문의 두 개의 연속된 Swin Transformer Block을 `SwinTransformerBlock` 클래스로 구현함.
-  - 각 블록에 `LayerNorm`, 어텐션, MLP, 잔차 연결을 적용함.
-  - `BasicLayer`에서 블록 인덱스에 따라 일반 윈도우와 Shifted Window를 번갈아 배치함.
+- **LayerNorm**
+  - Depthwise convolution 이후 `Permute([0, 2, 3, 1])`를 사용하여 feature map을 `NCHW`에서 `NHWC` 형식으로 변환함.
+  - `nn.LayerNorm(in_c)`를 적용하여 각 spatial 위치에서 채널 축을 기준으로 정규화함.
+  - LayerNorm 이후에는 다시 `Permute([0, 3, 1, 2])`를 적용하여 `NCHW` 형식으로 복원함.
 
-- **MLP Block**
-  - 논문의 두 층 MLP와 GELU 활성화 함수를 `MLP` 클래스로 구현함.
-  - 중간 차원은 `int(dim * mlp_ratio)`로 계산하며 기본 확장 비율은 `4.0`임.
+- **Channel Mixing**
+  - 첫 번째 `1 × 1` convolution을 사용하여 채널 수를 $4$배로 확장함.
 
-- **Token Embedding**
-  - 논문의 패치 토큰 생성을 `patch_embed`의 `nn.Conv2d`와 `patch_norm`의 `LayerNorm`으로 구현함.
+  $$
+  C \rightarrow 4C
+  $$
 
-- **Patch Merging**
-  - 논문의 인접한 패치 병합을 `PatchMerging` 클래스로 구현함.
-  - `x0`, `x1`, `x2`, `x3`로 네 위치의 패치를 추출한 뒤 `torch.cat()`으로 결합하고, 선형 변환을 통해 채널 차원을 변경함.
+  - 확장된 feature에 GELU 활성화 함수를 적용함.
+  - 두 번째 `1 × 1` convolution을 사용하여 채널 수를 원래 차원으로 되돌림.
 
-- **Weight Initialization**
-  - 논문의 초기화 설정을 `_init_weights()`에 구현함.
+  $$
+  4C \rightarrow C
+  $$
+
+- **Layer Scale**
+  - 각 `CNBlock`에 채널별 학습 가능한 Layer Scale parameter를 적용함.
+  - Layer Scale parameter의 형태는 `(1, C, 1, 1)`이며, 초기값은 `layer_scale` 인자로 설정함.
+  - 기본값은 $10^{-6}$으로 설정함.
+  - 변환된 residual branch에 Layer Scale을 적용한 뒤 Stochastic Depth와 residual connection을 수행함.
+
+  $$
+  y = x + \operatorname{StochasticDepth}
+  \left(
+  \gamma \odot F(x)
+  \right)
+  $$
+
+- **Stochastic Depth**
+  - `torchvision.ops.StochasticDepth`를 사용하여 residual branch에 Stochastic Depth를 적용함.
+  - `mode='row'`를 사용하여 batch의 각 샘플 단위로 residual branch를 확률적으로 제거함.
+  - ConvNeXt-T의 최대 Stochastic Depth 확률은 $0.1$로 설정함.
+  - 전체 $18$개 block에 대해 확률을 $0$에서 $0.1$까지 선형적으로 증가시킴.
+
+- **Residual Connection**
+  - `CNBlock`의 입력을 residual branch의 출력에 더함.
+  - 입력과 residual branch의 채널 수와 spatial resolution이 동일하므로 별도의 projection layer를 사용하지 않음.
+
+  $$
+  \operatorname{output} = x + \operatorname{residual}
+  $$
+
+- **Separate Downsampling Layer**
+  - Stage 사이의 downsampling을 `CNBlock`과 분리된 layer로 구현함.
+  - Downsampling 직전에 `Permute`와 `LayerNorm`을 적용함.
+  - 이후 `2 × 2` convolution과 `stride=2`를 사용하여 spatial resolution을 절반으로 줄임.
+  - 다음 Stage의 채널 수에 맞게 출력 채널을 증가시킴.
+
+  $$
+  (B, C, H, W)
+  \rightarrow
+  (B, 2C, H/2, W/2)
+  $$
+
+- **Stage 구성**
+  - `cfgs` 리스트를 사용하여 각 Stage의 채널 수, block 수, downsampling 여부를 지정함.
+  - 각 Stage에서는 지정된 횟수만큼 `CNBlock`을 반복해서 추가함.
+  - 마지막 Stage를 제외한 각 Stage 뒤에는 LayerNorm과 downsampling convolution을 추가함.
 
 ## Verification
 
 | Item | 구현 방식 |
 | :--- | :--- |
-| Input Shape | `torch.randn(1, 3, 224, 224)`로 테스트함 |
-| Output Shape | 분류 헤드의 출력 `[1, 1000]` 확인함 |
-| Total Parameters | 28,288,354 |
-| FLOPs | 4509194496 |
+| Input Shape | `torch.randn(1, 3, 224, 224)`로 테스트 |
+| Output Shape | `[1, 1000]` |
+| Total Parameters | 28,580,968 |
+| FLOPs | 4470433536 |
 
 ---
 
@@ -326,30 +376,5 @@ ConvNeXt/
 
 - CNN도 scalable 할 수 있다는 것을 보인 연구지만 Swin과 EfficientNet 보다 훨씬 좋은 것은 아님
 - AI의 지속적인 발전을 생각했을 때(multi-modal) 역시 Transformer가 좋은듯..
-
-## Merits
-
-- **기존 ViT보다 효율적인 고해상도 처리**
-  - 기존 ViT는 전체 패치에 전역 셀프 어텐션을 적용해 입력 크기에 따라 연산량이 제곱으로 증가함.
-  - Swin Transformer는 고정된 윈도우 내부에서만 어텐션을 계산해 입력 이미지 크기에 대해 선형적인 연산 복잡도를 달성함.
-
-- **기존 ViT보다 다양한 비전 작업에 적합함**
-  - 기존 ViT는 단일 해상도의 특징 맵을 생성해 객체 탐지나 시맨틱 세그멘테이션에 직접 적용하기 어려움.
-  - Swin Transformer는 Patch Merging을 통해 CNN과 유사한 계층적 다중 해상도 특징 맵을 생성함.
-
-- **기존 CNN 백본과 비교해 경쟁력 있는 성능을 보임**
-  - 논문 실험에서 Swin-T는 비슷한 계산량의 ResNet-50보다 여러 객체 탐지 프레임워크에서 더 높은 성능을 보임.
-  - Swin Transformer는 ImageNet 분류뿐 아니라 COCO 객체 탐지와 ADE20K 시맨틱 세그멘테이션에서도 강한 성능을 보임.
-
-## Demerits
-
-- **단순한 ViT보다 구현이 복잡함**
-  - ViT의 전역 어텐션보다 window partition, cyclic shift, attention mask, Patch Merging을 추가로 구현해야 함.
-
-## Why?
-
-- **왜 Shifted Window가 필요한가?**
-  - 고정된 윈도우만 사용하면 윈도우 경계에서 정보가 단절됨.
-  - Shifted Window는 다음 블록에서 분할 기준을 바꾸는데 이걸 반복하면서 점차 전역적인 정보를 볼 수 있게됨
 
 ---

@@ -63,10 +63,12 @@ class ConvNeXt_T(nn.Module):
                 block += 1
             if downsampling:
                 inner_c = c * 2
-                Permute([0,2,3,1]), # 개 행 열 채
-                nn.LayerNorm(c),
-                Permute([0,3,1,2]), # 개 채 행 열
-                layers += [nn.Conv2d(c, inner_c, 2, stride=2)]
+                layers += [
+                    Permute([0,2,3,1]), # 개 행 열 채
+                    nn.LayerNorm(c),
+                    Permute([0,3,1,2]), # 개 채 행 열
+                    nn.Conv2d(c, inner_c, 2, stride=2),
+                    ]
 
         self.layers = nn.Sequential(*layers)
 
