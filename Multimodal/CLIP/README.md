@@ -49,12 +49,18 @@
 
 # 5. Implementation
 
-- 이미지 인코더로 Modified ResNet-50, 텍스트 인코더로 Transformer를 사용한 CLIP을 Pytorch로 Scratch 구현
+- 이미지 인코더로 Modified ResNet-50, Modified ViT-B/32, 텍스트 인코더로 Transformer를 사용한 CLIP을 Pytorch로 Scratch 구현
+
 - 원문에 sequence length는 76을 사용한다고 되있는데, github 코드를 보니 77을 사용함
+
 - EOT token이 가장 큰 token ID라는 특성을 이용하여 `argmax`로 EOT representation 추출.
+
 - Text projection을 bias 없는 linear transformation으로 구현.
   - 원문에 명시되있지는 않지만 공식 구현 코드에 text_proj에 bias를 뺌
     - consine similarity를 계산하기 위해 이미지와 같은 차원으로 투영하려는 목적인데 bias를 더하면 방향이 바뀔 수 있기 때문에 써도 되지만 오히려 방해만 될 것 같음
+    - 공식 구현 코드에서는 text_proj이랑 ViT 이미지 인코더의 마지막 proj에만 bias를 없애는데 ResNet 이미지 인코더는 왜 안뺼까..? 똑같은 이유로 빼도 될 것 같아서 빼고 구현함
+
+- 원문과 동일하게 GELU 대신 QuickGELU 사용
 
 ## Verification
 
@@ -62,9 +68,7 @@
 | :--- | :--- |
 | Input Shape | image(3, 3, 224, 224), text(3, 77) |
 | Output Shape | (3, 3) |
-| Total Parameters | 102,007,137 |
-
-- 공식 구현 코드와 파라미터 수 동일
+| Total Parameters | ResNet50(102,006,113) ViT-B/32(151,277,313) |
 
 ---
 
@@ -109,6 +113,11 @@
 - 다른 이미지 캡션 모델들보다 왜 이미지 특징을 훨씬 잘 추출할까? 
   - Attention Pooling을 적용함으로써 이미지의 핵심을 더 잘 이해함
 
-- 
+- QuickGELU란?
+  - GELU를 빠르게 계산하기 위해 만든 근사식
+  - QuickGELU(x) = x * σ(1.702)
+    - QuickGELU(1) = 1 * σ(1.702) ≈ 0.846
+    - GELU(1) ≈ 0.841
+  - 예전에는 QuickGELU가 더 빨랐지만 최근엔 PyTorch와 GPU의 발전으로 PyTorch/CUDA 쪽에서 최적화된 nn.GELU가 더 빠르다고 함 -> QuickGELU를 쓸 이유가 없어짐
 
 ---

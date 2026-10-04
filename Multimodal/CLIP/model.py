@@ -13,7 +13,7 @@ class AttentionPool(nn.Module):
         self.Q_proj = nn.Linear(embed_dim, embed_dim)
         self.K_proj = nn.Linear(embed_dim, embed_dim)
         self.V_proj = nn.Linear(embed_dim, embed_dim)
-        self.C_proj = nn.Linear(embed_dim, out_dim)
+        self.C_proj = nn.Linear(embed_dim, out_dim, bias=False)
 
         self.num_heads = num_heads
         self.scale = (embed_dim / num_heads) ** 0.5
@@ -136,6 +136,44 @@ class CLIPResNet50(nn.Module):
 
         return x
 
+class CLIPViTB32(nn.Module):
+    def __init__(self, input_resolution=224, patch_size=32, num_layers=12, d_model=768, num_heads=12, out_dim=512):
+        super().__init__()
+
+        self.input_resolution = input_resolution
+        self.out_dim = out_dim
+        scale = d_model ** -0.5
+        
+        self.conv = nn.Conv2d(3, d_model, patch_size, stride=patch_size, bias=False)
+        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model) * scale)
+        self.positional_embedding = nn.Parameter(torch.randn((self.input_resolution // patch_size) ** 2 + 1, d_model) * scale)
+        self.ln_pre = nn.LayerNorm(d_model)
+
+        self.transformer = Transformer(mask=None, num_layers=num_layers, d_model=d_model, num_heads=num_heads)
+        self.ln_post = nn.LayerNorm(d_model)
+
+        self.proj = nn.Linear(d_model, out_dim, bias=False)
+
+    def forward(self, x):
+        cls_embedding = self.cls_token.expand(x.shape[0], -1, -1)
+
+        x = self.conv(x)
+        x = rearrange(x, 'B D H W -> B (H W) D')
+        x = torch.cat([cls_embedding, x], dim=1)
+        x = x + self.positional_embedding
+
+        x = self.ln_pre(x)
+        x = self.transformer(x)
+        x = self.ln_post(x[:, 0, :])
+
+        x = self.proj(x)
+
+        return x
+
+class QuickGELU(nn.Module):
+    def forward(self, x):
+        return x * torch.sigmoid(1.702 * x)
+
 class MHA(nn.Module):
     def __init__(self, mask, d_model=512, num_heads=8):
         super().__init__()
@@ -155,7 +193,10 @@ class MHA(nn.Module):
         K = rearrange(self.K_proj(x), 'B seq (d_model num_heads) -> B num_heads seq d_model', num_heads = self.num_heads)
         V = rearrange(self.V_proj(x), 'B seq (d_model num_heads) -> B num_heads seq d_model', num_heads = self.num_heads)
 
-        attn_score = ((Q @ K.transpose(-2, -1)) + self.mask) / self.scale
+        if self.mask is not None:
+            attn_score = ((Q @ K.transpose(-2, -1)) + self.mask) / self.scale
+        else:
+            attn_score = (Q @ K.transpose(-2, -1)) / self.scale
         attn_weight = torch.softmax(attn_score, -1)
         attention = attn_weight @ V
 
@@ -174,7 +215,7 @@ class TransformerBlock(nn.Module):
         self.ln_2 = nn.LayerNorm(d_model)
         self.mlp = nn.Sequential(
             nn.Linear(d_model, d_model * 4),
-            nn.GELU(),
+            QuickGELU(),
             nn.Linear(d_model * 4, d_model)
             )
 
@@ -198,10 +239,13 @@ class Transformer(nn.Module):
         return self.layers(x)
 
 class CLIP(nn.Module):
-    def __init__(self, out_dim=1024, vocab_size=49408, context_length=77, d_model=512, num_layers=12, num_heads=8):
+    def __init__(self, out_dim=1024, vocab_size=49408, context_length=77, d_model=512, num_layers=12, num_heads=8, encoder='resnet'):
         super().__init__()
 
-        self.visual = CLIPResNet50(out_dim=out_dim)
+        if encoder == 'resnet':
+            self.visual = CLIPResNet50(out_dim=out_dim)
+        elif encoder == 'vit':
+            self.visual = CLIPViTB32(out_dim=out_dim)
         self.logits_scale = nn.Parameter(torch.ones([]) * np.log(1/0.07))
 
         self.token_embedding = nn.Embedding(vocab_size, d_model)
