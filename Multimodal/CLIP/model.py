@@ -198,7 +198,7 @@ class Transformer(nn.Module):
         return self.layers(x)
 
 class CLIP(nn.Module):
-    def __init__(self, out_dim=1024, vocab_size=49152, context_length=77, d_model=512, num_layers=12, num_heads=8):
+    def __init__(self, out_dim=1024, vocab_size=49408, context_length=77, d_model=512, num_layers=12, num_heads=8):
         super().__init__()
 
         self.visual = CLIPResNet50(out_dim=out_dim)

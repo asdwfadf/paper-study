@@ -49,16 +49,22 @@
 
 # 5. Implementation
 
-## Model Implementation
+- 이미지 인코더로 Modified ResNet-50, 텍스트 인코더로 Transformer를 사용한 CLIP을 Pytorch로 Scratch 구현
+- 원문에 sequence length는 76을 사용한다고 되있는데, github 코드를 보니 77을 사용함
+- EOT token이 가장 큰 token ID라는 특성을 이용하여 `argmax`로 EOT representation 추출.
+- Text projection을 bias 없는 linear transformation으로 구현.
+  - 원문에 명시되있지는 않지만 공식 구현 코드에 text_proj에 bias를 뺌
+    - consine similarity를 계산하기 위해 이미지와 같은 차원으로 투영하려는 목적인데 bias를 더하면 방향이 바뀔 수 있기 때문에 써도 되지만 오히려 방해만 될 것 같음
 
 ## Verification
 
 | Item | 구현 방식 |
 | :--- | :--- |
-| Input Shape |  |
-| Output Shape |  |
-| Total Parameters |  |
-| FLOPs |  |
+| Input Shape | image(3, 3, 224, 224), text(3, 77) |
+| Output Shape | (3, 3) |
+| Total Parameters | 102,007,137 |
+
+- 공식 구현 코드와 파라미터 수 동일
 
 ---
 
@@ -102,5 +108,7 @@
 
 - 다른 이미지 캡션 모델들보다 왜 이미지 특징을 훨씬 잘 추출할까? 
   - Attention Pooling을 적용함으로써 이미지의 핵심을 더 잘 이해함
+
+- 
 
 ---

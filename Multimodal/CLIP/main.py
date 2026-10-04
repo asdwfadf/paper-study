@@ -2,11 +2,10 @@ import torch
 import torch.nn as nn
 from model import CLIP
 from torchinfo import summary
-from fvcore.nn import FlopCountAnalysis
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-batch_size = 1
+batch_size = 3
 
 out_dim=1024
 vocab_size=49408
@@ -35,4 +34,3 @@ print(f'text loss : {text_loss}')
 print(f'loss : {loss}')
 
 summary(model, input_data=(image, text))
-print(f'FLOPs: {FlopCountAnalysis(model, (image, text)).total()}')
